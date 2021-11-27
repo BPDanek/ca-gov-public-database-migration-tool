@@ -1,6 +1,16 @@
+import numpy
 from db_helpers.pur_postgres_population_script import PostgresInterface, read_from_download_folder, read_year, read_text
 
+"""
+currently only does import for single file within a year
+"""
 def do_import():
+
+    # columns that need special string casting
+    # column 23 and 24 would need it too, but they are logged in some special way
+    # column 14 is date, we will store it as string for now.
+    # indexed from 1 based on documents, made too index by 0 for python manipulation
+    CHAR_COLUMNS = numpy.array([8, 10, 12, 14, 16, 17, 18, 19, 20, 21, 22, 25, 27, 31, 33]) - 1
 
     download_path = '/Users/denbanek/Downloads/pur_data_uncompressed/'
 
@@ -29,42 +39,16 @@ def do_import():
         # labels is n, runs in O(n)
         # three different null/empty types occur in the data
         for column_index in range(len(labels)):
-            if content_lines[line_index][column_index] is '':
+            current_value = content_lines[line_index][column_index]
+            if current_value is ('' or '""' or ',,') or '""' in current_value or current_value.__len__() is 0:
                 content_lines[line_index][column_index] = None
-            elif content_lines[line_index][column_index] is '""':
-                content_lines[line_index][column_index] = None
-            elif content_lines[line_index][column_index] is ',,':
-                content_lines[line_index][column_index] = None
-            elif content_lines[line_index][column_index].__len__() is 0:
-                content_lines[line_index][column_index] = None
-            elif '""' in content_lines[line_index][column_index]: # some weird edge case in the data?
-                content_lines[line_index][column_index] = None
+            # elif column_index in CHAR_COLUMNS:
+            #     content_lines[line_index][column_index] = """'""" + current_value + """'"""
 
-    # declare the text file data structure
-    file_text_as_dictionary = {}
-
-    # initialize the text file data structure with the two lines
-    for col_index in range(len(labels)):
-        file_text_as_dictionary[labels[col_index]] = [content_lines[0][col_index], content_lines[1][col_index]]
-
-    print(len(content_lines))
-    print(len(content_lines[:][0]))
-    print(len(labels))
-
-    for col_index in range(len(labels)):
-        existing_values = file_text_as_dictionary[labels[col_index]]
-
-        for line in content_lines[2:]:
-            existing_values.append(line[col_index])
-
-    print("done")
-    return file_text_as_dictionary
-
+    return content_lines
 
 if __name__ == '__main__':
     pgAccess = PostgresInterface()
-
-    raw_db_as_text = do_import()
-
+    raw_db_as_lines = do_import()
     print(pgAccess.add_key_columns())  # test!
-    print(pgAccess.connect_add_pur_entry(db=raw_db_as_text))
+    print(pgAccess.connect_add_pur_entry(db=raw_db_as_lines))

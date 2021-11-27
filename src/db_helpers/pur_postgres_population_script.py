@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import numpy
 import psycopg2
 import os
 from db_helpers.postgres_config import config
@@ -7,29 +8,20 @@ from db_helpers.postgres_config import config
 """
 Constant value
 Data fields in the UDC table that we are keeping for business use case (there are additional fields we won't use
+
+for now: just usee county code for location
+next step: add PLS system primitives (Combination of the county, meridian, township, range and section fields identifies a unique location within the PLS)
 """
 UDC_VALID_DATA_KEYS = [
-    'use_no',
     'prodno',
     'chem_code',
     'lbs_chm_used',
-    'acre_treated',
-    'unit_treated',
     'applic_dt',
     'county_cd',
-    'base_ln_mer',
-    'township',
-    'tship_dir',
-    'range',
-    'range_dir',
-    'section',
-    'grower_id',
-    'aer_gnd_ind',
-    'site_code',
-    'qualify_cd',
-    'document_no'
+    'township'
 ]
 
+UDC_VALID_DATA_INDECES = numpy.array([2, 3, 5, 14, 16, 18]) - 1
 """
 about sql connections: 
 https://www.psycopg.org/docs/
@@ -90,25 +82,12 @@ class PostgresInterface:
         self.connect_execute_single("""
         CREATE TABLE IF NOT EXISTS ca_udc (
             id serial PRIMARY KEY,
-            use_no integer,
             prodno integer,
             chem_code integer,
             lbs_chm_used numeric,
-            acre_treated numeric,
-            unit_treated varchar(1),
-            applic_dt integer,  
-            county_cd varchar(2), 
-            base_ln_mer varchar(1),
-            township varchar(2),
-            tship_dir varchar(1),
-            range_ varchar(2),
-            range_dir varchar(1),
-            section_ varchar(2),
-            grower_id varchar(11), 
-            aer_gnd_ind varchar(1),
-            site_code integer,
-            qualify_cd integer,
-            document_no varchar(8)
+            applic_dt varchar(10),  
+            county_cd varchar(4), 
+            township varchar(4)
         ); 
         """)
 
@@ -118,6 +97,8 @@ class PostgresInterface:
     
     Could just use .execute() in a loop, or could use `https://www.psycopg.org/docs/extras.html#fast-exec`
     for now will use .execute in a loop. 
+    
+    db is the cleaned rows of the text file
     """
     def connect_add_pur_entry(self, db):
 
@@ -129,34 +110,29 @@ class PostgresInterface:
             print('Connecting to the PostgreSQL database...')
             db_session = psycopg2.connect(**self.params)
 
-            with db_session:
-                with db_session.cursor() as cursor:
-                    prior = cursor.rowcount
-                    for row in range(len(db['use_no'])):
+            cursor = db_session.cursor()
+            prior = cursor.rowcount
+            for row in range(len(db)): # 15,XXX x 35 table
 
-                        items = []
-                        for key in UDC_VALID_DATA_KEYS:
-                            value = db[key][row]
-                            if value is None:
-                                value = 'NULL'
-                            items.append(value)
+                items = []
+                for column in range(len(db[0])):
+                    if column in UDC_VALID_DATA_INDECES:
+                        value = db[row][column]
 
-                        print(items)
+                        items.append(value)
 
-                        use_no, prodno, chem_code, lbs_chm_used, acre_treated, unit_treated, applic_dt, county_cd, base_ln_mer, township, tship_dir, range_, range_dir, section_, grower_id, aer_gnd_ind, site_code, qualify_cd, document_no = items
-                        sql_string = """
-                            INSERT INTO ca_udc(use_no, prodno, chem_code, lbs_chm_used, acre_treated, unit_treated, applic_dt,  county_cd, base_ln_mer, township, tship_dir, range_, range_dir, section_, grower_id, aer_gnd_ind, site_code, qualify_cd, document_no) 
-                            values ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {});
-                        """.format(use_no, prodno, chem_code, lbs_chm_used, acre_treated, unit_treated, applic_dt, county_cd, base_ln_mer, township, tship_dir, range_, range_dir, section_, grower_id, aer_gnd_ind, site_code, qualify_cd, document_no)
+                print(items)
+                prodno, chem_code, lbs_chm_used, applic_dt, county_cd, township = items
+                cursor.execute(cursor.mogrify("""INSERT INTO ca_udc(prodno, chem_code, lbs_chm_used, applic_dt, county_cd, township) values (%s, %s, %s, %s, %s, %s);""", (prodno, chem_code, lbs_chm_used, applic_dt, county_cd, township)))
 
-                        cursor.execute(sql_string)
+            # https://www.psycopg.org/docs/usage.html#constants-adaptation
 
-                    updated_row = cursor.rowcount
+            updated_row = cursor.rowcount
 
-                    print((updated_row - prior), 'rows updated')
+            print((updated_row - prior), 'rows updated')
 
-                    cursor.close()
-                db_session.commit()
+            cursor.close()
+            db_session.commit()
             db_session.close()
 
         except (Exception, psycopg2.DatabaseError) as error:
