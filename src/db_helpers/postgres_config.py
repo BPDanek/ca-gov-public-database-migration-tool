@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 from configparser import ConfigParser
 
-def config(filename='../config.ini', section='postgresql'):
+def config(filename='/Users/denbanek/PycharmProjects/ca-gov-public-database-migration-tool/src/config.ini', section='postgresql'):
 
     parser = ConfigParser()
     parser.read(filename)

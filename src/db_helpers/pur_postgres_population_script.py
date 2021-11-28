@@ -32,6 +32,8 @@ and all cursor execution is within the context of the db session/connection
 class PostgresInterface:
 
     def __init__(self, *args):
+
+        # get postgres config parameters
         self.params = config()
         return
 
@@ -56,17 +58,18 @@ class PostgresInterface:
 
             updated_rows = cur.rowcount
 
-            print((updated_rows - prior), 'rows added by query. ')
-
             # commit db changes
             conn.commit()
 
-            # close the communication with the PostgreSQL
-            cur.close()
+            print((updated_rows - prior), 'rows added by query. ')
+
         except (Exception, psycopg2.DatabaseError) as error:
             print(error)
             return_code = -1
         finally:
+            if cur is not None:
+                cur.close()
+                print('Cursor closed.')
             if conn is not None:
                 conn.close()
                 print('Database connection closed.')
@@ -75,11 +78,12 @@ class PostgresInterface:
 
 
     """
-    Adds columns to table from UDC_VALID_DATA_KEYS. This operation is only additive, not subtractive
-    https://www.psycopg.org/docs/usage.html#adaptation-of-python-values-to-sql-types
+    Define columns in table.
+    
+    Complies with UDC_VALID_DATA_KEYS.
     """
     def add_key_columns(self):
-        self.connect_execute_single("""
+        return (self.connect_execute_single("""
         CREATE TABLE IF NOT EXISTS ca_udc (
             id serial PRIMARY KEY,
             prodno integer,
@@ -89,63 +93,76 @@ class PostgresInterface:
             county_cd varchar(4), 
             township varchar(4)
         ); 
-        """)
+        """))
 
     """
-    run a batch of requests
-    returns 1 for success, -1 for exception
+    Run a batch of psql requests.
     
+    db_component: str[] which is n x 35
+    return return_code:  {1, -1} for success and for exception (respectively) 
+    
+    notes:
     Could just use .execute() in a loop, or could use `https://www.psycopg.org/docs/extras.html#fast-exec`
     for now will use .execute in a loop. 
-    
-    db is the cleaned rows of the text file
     """
-    def connect_add_pur_entry(self, db):
+    def connect_execute_batch(self, db_component):
 
-        return_code = 1 # success code by default
-        db_session = None # initialize to avoid NPE if .connect returns null
+        return_code = 1
+        db_session = None
 
         try:
 
-            print('Connecting to the PostgreSQL database...')
+            # connect to postgres db
             db_session = psycopg2.connect(**self.params)
 
+            # make a cursor
             cursor = db_session.cursor()
-            prior = cursor.rowcount
-            for row in range(len(db)): # 15,XXX x 35 table
 
+            # count number of rows updated
+            updated_row = 0
+            for row in range(len(db_component)): # 15,XXX x 35 table
+
+                # build up set of valid data indices for this row
+                # type -- str[]
                 items = []
-                for column in range(len(db[0])):
+                for column in range(len(db_component[0])):
                     if column in UDC_VALID_DATA_INDECES:
-                        value = db[row][column]
-
+                        value = db_component[row][column]
                         items.append(value)
 
-                print(items)
+                # print("Inserting line into db: [{}].".format(items))
+
+                # unpack fields from valid column indeces
                 prodno, chem_code, lbs_chm_used, applic_dt, county_cd, township = items
+
+                # execute string using string interpolation (to map python variables to sql strings & types)
+                # https://www.psycopg.org/docs/usage.html#constants-adaptation
                 cursor.execute(cursor.mogrify("""INSERT INTO ca_udc(prodno, chem_code, lbs_chm_used, applic_dt, county_cd, township) values (%s, %s, %s, %s, %s, %s);""", (prodno, chem_code, lbs_chm_used, applic_dt, county_cd, township)))
 
-            # https://www.psycopg.org/docs/usage.html#constants-adaptation
+                # cursor logs the number of rows affected by an execute command
+                updated_row += cursor.rowcount
+            # log row count after batch execute
 
-            updated_row = cursor.rowcount
-
-            print((updated_row - prior), 'rows updated')
-
-            cursor.close()
+            # commit db changes
             db_session.commit()
-            db_session.close()
 
+            print("Batch insert complete, insert [{}] rows inserted".format(updated_row))
+
+        # log any exception and set return code to failure
         except (Exception, psycopg2.DatabaseError) as error:
             print(error)
             return_code = -1 # failure code returned
 
         finally:
+            if cursor is not None:
+                cursor.close()
+                # print('Cursor closed.')
+
             if db_session is not None:
                 db_session.close()
-                print('Database connection closed.')
+                # print('Database connection closed.')
 
         return return_code
-
 
 
 # helper functions
@@ -172,7 +189,6 @@ def read_from_download_folder(download_directory='/Users/denbanek/Downloads/pur_
     for filename in os.listdir(download_directory):
         if filename.startswith("pur"):
             print(os.path.join(download_directory, filename))
-            # try to walk files
             pur_by_year.append(os.path.join(download_directory, filename))
             continue
         else:
@@ -202,9 +218,6 @@ def read_year(year_directory='/Users/denbanek/Downloads/pur_data_uncompressed/pu
 
     for filename in os.listdir(year_directory):
         if filename.startswith("udc"):
-            # print(os.path.join(year_directory, filename))
-            # try to walk files
-            # read_text(os.path.join(year_directory, filename))
             udc_components.append(os.path.join(year_directory, filename))
             continue
         else:
@@ -219,9 +232,4 @@ def read_text(file='/Users/denbanek/Downloads/pur_data_uncompressed/pur2018/udc1
 
     with open(file, mode='r') as f:
         lines = f.readlines()
-        for line in lines:
-            if ",," not in line and "use_no" not in line:
-                print(line)
-            else:
-                continue
     return lines

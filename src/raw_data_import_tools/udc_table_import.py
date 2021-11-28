@@ -1,54 +1,56 @@
-import numpy
-from db_helpers.pur_postgres_population_script import PostgresInterface, read_from_download_folder, read_year, read_text
+import time
+from db_helpers.pur_postgres_population_script import read_from_download_folder, read_year, read_text
 
 """
-currently only does import for single file within a year
+pgAccess: PostgresIntrface from db_helpers
+year_path: string pointing to a year directory from the pur database. 
+
+return result_codes: ...
 """
-def do_import():
+def import_year(pgAccess, year_path):
+    files = read_year(year_path)
+    print("Importing year documents with [{}] files. -- {}".format(len(files), year_path))
+    for file in files:
+        cleaned_page_lines = import_page(file)
+        start = time.time()
+        result_code = pgAccess.connect_execute_batch(db_component=cleaned_page_lines)
+        end = time.time()
+        print("Time for file [{}] -- [{}] -- result: [{}] ".format(file, end - start, result_code))
 
-    # columns that need special string casting
-    # column 23 and 24 would need it too, but they are logged in some special way
-    # column 14 is date, we will store it as string for now.
-    # indexed from 1 based on documents, made too index by 0 for python manipulation
-    CHAR_COLUMNS = numpy.array([8, 10, 12, 14, 16, 17, 18, 19, 20, 21, 22, 25, 27, 31, 33]) - 1
 
-    download_path = '/Users/denbanek/Downloads/pur_data_uncompressed/'
+"""
+file_path: string pointing to a text file from a years PUR. Each year tends to have > 50 files. 
 
-    years = read_from_download_folder(download_path)
-    year = years[1]
+return content_lines: a str[] 
+"""
+def import_page(file_path):
 
-    files = read_year(year)
-    file_ = files[1]
+    # get text file as one big array of strings (each line in the file is a new array element)
+    # type -- str[] (approximately 15000 x 35),
+    text = read_text(file_path)
 
-    text = read_text(file_)
+    # process labels (not that it really matters
+    # type -- str
+    labels = text[0].replace('\n', '').split(',')  # remove end of line character
+    print("Importing file with [{}] lines and [{}] labels. -- {}".format(len(text) - 1, len(labels), file_path))
 
-    labels = text[0]
-    labels = labels.replace('\n', '')  # remove end of line character
-    labels = labels.split(',')  # split by comma into a list
-
+    # loop through the content lines and clean them.
+    # type -- str[]
     content_lines = text[1:]
 
-    # for m content lines, n labels O(m * (len(lines) + n)) ~O(15,000 * (160 + 35)) computations
-    # loop through the lines and clean them
+    # time, O(): outer loop is run O(n). Inner loop is run O(m), as is .split and .replace. --> O(n(m + m + m)) == O(nm)
+    # what is complxity of .replace() and .split()? (assume its linear in worst case)
+    # let n be length of str[], ~15000 in practice
+    # let m be number of characters in each line, ~150 in practice
     for line_index in range(len(content_lines)):
 
-        # O(len(line)) + O(len(line))
-        # remove artifact from .txt file
+        # clean line from artifacts
         content_lines[line_index] = content_lines[line_index].replace('\n', '').split(',')
 
-        # labels is n, runs in O(n)
-        # three different null/empty types occur in the data
+        # three different null/empty types occur in the data, these need to be standardized.
         for column_index in range(len(labels)):
             current_value = content_lines[line_index][column_index]
             if current_value is ('' or '""' or ',,') or '""' in current_value or current_value.__len__() is 0:
                 content_lines[line_index][column_index] = None
-            # elif column_index in CHAR_COLUMNS:
-            #     content_lines[line_index][column_index] = """'""" + current_value + """'"""
 
     return content_lines
-
-if __name__ == '__main__':
-    pgAccess = PostgresInterface()
-    raw_db_as_lines = do_import()
-    print(pgAccess.add_key_columns())  # test!
-    print(pgAccess.connect_add_pur_entry(db=raw_db_as_lines))
