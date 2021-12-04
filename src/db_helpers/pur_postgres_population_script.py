@@ -34,7 +34,7 @@ class PostgresInterface:
     def __init__(self, *args):
 
         # get postgres config parameters
-        self.params = config()
+        self.params = config()['connectionstring']
         return
 
     """
@@ -46,7 +46,7 @@ class PostgresInterface:
         conn = None
         try:
             print('Connecting to the PostgreSQL database...')
-            conn = psycopg2.connect(**self.params)
+            conn = psycopg2.connect(self.params)
 
             # create a cursor
             cur = conn.cursor()
@@ -113,7 +113,7 @@ class PostgresInterface:
         try:
 
             # connect to postgres db
-            db_session = psycopg2.connect(**self.params)
+            db_session = psycopg2.connect(self.params)
 
             # make a cursor
             cursor = db_session.cursor()
@@ -141,6 +141,7 @@ class PostgresInterface:
 
                 # cursor logs the number of rows affected by an execute command
                 updated_row += cursor.rowcount
+                break;
             # log row count after batch execute
 
             # commit db changes
