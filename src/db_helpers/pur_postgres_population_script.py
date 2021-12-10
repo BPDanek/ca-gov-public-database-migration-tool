@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+import time
+
 import numpy
 import psycopg2
 import os
@@ -41,7 +43,7 @@ class PostgresInterface:
     Connect to the PostgreSQL database server and run a single query
     returns 1 for success, -1 for exception
     """
-    def connect_execute_single(self, sql_query):
+    def connect_execute_single(self, sql_query, params=None):
         return_code = 1
         conn = None
         try:
@@ -54,7 +56,10 @@ class PostgresInterface:
             # execute a statement
             prior = cur.rowcount
 
-            cur.execute(sql_query)
+            if params is not None:
+                cur.execute(cur.mogrify(sql_query, params))
+            else:
+                cur.execute(sql_query)
 
             updated_rows = cur.rowcount
 
@@ -82,7 +87,7 @@ class PostgresInterface:
     
     Complies with UDC_VALID_DATA_KEYS.
     """
-    def add_key_columns(self):
+    def udc_add_key_columns(self):
         return (self.connect_execute_single("""
         CREATE TABLE IF NOT EXISTS ca_udc (
             id serial PRIMARY KEY,
@@ -92,6 +97,15 @@ class PostgresInterface:
             applic_dt varchar(10),  
             county_cd varchar(4), 
             township varchar(4)
+        ); 
+        """))
+
+    def reduced_udc_add_key_columns(self):
+        return (self.connect_execute_single("""
+        CREATE TABLE IF NOT EXISTS ca_reduced_udc (
+            id serial PRIMARY KEY,
+            county_cd varchar(4), 
+            pesticide_count integer
         ); 
         """))
 
@@ -120,7 +134,9 @@ class PostgresInterface:
 
             # count number of rows updated
             updated_row = 0
-            for row in range(len(db_component)): # 15,XXX x 35 table
+            length_of_db = len(db_component)
+            start = time.time()
+            for row in range(length_of_db): # 15,XXX x 35 table
 
                 # build up set of valid data indices for this row
                 # type -- str[]
@@ -141,7 +157,17 @@ class PostgresInterface:
 
                 # cursor logs the number of rows affected by an execute command
                 updated_row += cursor.rowcount
-                break;
+                if (updated_row % 1000 is 0):
+                    end = time.time()
+                    print(updated_row / length_of_db, "% -- ", end - start)
+                    start = time.time()
+
+                if (updated_row is length_of_db*0.10):
+                    end = time.time()
+                    print("early break, limit reached for file -- ", end - start, " -- updated_row:", updated_row)
+                    db_session.commit()
+                    break;
+
             # log row count after batch execute
 
             # commit db changes
