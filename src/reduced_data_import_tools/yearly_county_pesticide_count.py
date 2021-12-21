@@ -1,15 +1,14 @@
 """
-this script defines and populates a db table which contains the pesticide count per county for a single year.
-
-the pesticide counts are all for a single year (specified in the file)
- id | county_cd | pesticide_count
-----+-----------+-----------------
-  1 | 03        |            6181
-  ....
+this script defines and populates a db table which contains the pesticide count per county over several years
+ id | county_cd | count_2018 | count_2017 |...|count_YYYY
+----+-----------+------------+------------+---+-----------
 """
 
 import time
+from functools import reduce
+
 from db_helpers.pur_helper_functions import read_year, read_text
+from db_helpers.pur_postgres_population_script import PURMigrator
 
 """
 pgAccess: PostgresIntrface from db_helpers
@@ -36,7 +35,6 @@ def import_year_reduced(pgAccess, year_path):
 
 """
 file_path: string pointing to a text file from a years PUR. Each year has 58 files. 
-
 return the number of pesticides available in each county
 """
 def get_page_count(file_path):
@@ -56,3 +54,32 @@ def get_page_count(file_path):
 
     return len(content_lines)
 
+"""
+Define a table in the postgres database which is (key, county_cd, count_2018, count_2017, ..., count_YYYY)
+years: str[] like ['2018', '2017', ..., 'YYYY'] 
+"""
+def buildYearlyPesticideCountTable(years):
+
+    # generate the sql for table definition
+    query_prefix = """CREATE TABLE IF NOT EXISTS ca_yearly_reduced_udc (id serial PRIMARY KEY, county_cd varchar(4)"""
+    query_middle = reduce(lambda body, append: body + ", " + "count_" + append + " integer", years, "")
+    query_postfix = """); """
+    query = query_prefix + query_middle + query_postfix
+
+    pgAccess = PURMigrator()
+    return pgAccess.connect_execute_single(query)
+
+"""
+reads and processes all the text of a single file
+"""
+def getLineCount(file):
+    with open(file, mode='r') as f:
+        lines = f.readlines()
+    return len(lines) - 1
+
+# num is a number like type int in other languages
+# numb is str(num), so it can be normalizd/formattd
+# 1 --> "01"
+# 0 --> "00"
+# 12 --> "12"
+normalize = lambda num: (lambda numb: ("0" + numb) if len(numb) == 1 else (numb))(str(num))

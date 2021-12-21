@@ -1,5 +1,5 @@
 import time
-from db_helpers.pur_postgres_population_script import read_from_download_folder, read_year, read_text
+from db_helpers.pur_helper_functions import read_year, read_text
 
 """
 pgAccess: PostgresIntrface from db_helpers
