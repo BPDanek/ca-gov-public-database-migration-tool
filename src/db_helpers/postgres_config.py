@@ -17,5 +17,5 @@ def config(filename='/Users/denbanek/PycharmProjects/ca-gov-public-database-migr
         raise Exception('Section {0} not found in the {1} file'.format(section, filename))
         db_config = None
 
-    print(db_config)
+    # print(db_config)
     return db_config

@@ -46,7 +46,7 @@ class PURMigrator:
         return_code = 1
         conn = None
         try:
-            print('Connecting to the PostgreSQL database...')
+            # print('Connecting to the PostgreSQL database...')
             conn = psycopg2.connect(self.params)
 
             # create a cursor
@@ -65,7 +65,7 @@ class PURMigrator:
             # commit db changes
             conn.commit()
 
-            print((updated_rows - prior), 'rows added by query.', sql_query)
+            # print((updated_rows - prior), 'rows added by query.', sql_query)
 
         except (Exception, psycopg2.DatabaseError) as error:
             print(error)
@@ -73,10 +73,10 @@ class PURMigrator:
         finally:
             if cur is not None:
                 cur.close()
-                print('Cursor closed.')
+                # print('Cursor closed.')
             if conn is not None:
                 conn.close()
-                print('Database connection closed.')
+                # print('Database connection closed.')
 
         return return_code
 
